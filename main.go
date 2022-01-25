@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 func main() {
@@ -23,28 +25,40 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// create list of QnAs
 	QnAs := createQnAs(data)
+	// get answer sheet from QnA list
 	answerSheet := createAnswerSheet(QnAs)
-	var givenAnswers []string
-	for index, QnA := range QnAs {
-		str := fmt.Sprintf("%s: ", QnA.Question)
-		fmt.Print(str)
-		var input string
-		_, err := fmt.Scan(&input)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return
-		}
-		givenAnswers = append(givenAnswers, input)
-		QnAs[index] = QnA
-	}
-
 	correctCount := 0
-	for index, answer := range givenAnswers {
-		correct := answer == answerSheet[index]
-		if correct {
-			correctCount += 1
+
+	// timer goroutine
+	timeLimit := flag.Int("limit", 4, "time limit for quiz in seconds")
+	flag.Parse()
+	timer := time.NewTimer(time.Duration(*timeLimit) * time.Second)
+
+	//  get user input
+	for index, QnA := range QnAs {
+		fmt.Printf("%s: ", QnA.Question)
+		answerChannel := make(chan string)
+		go func() {
+			var input string
+			_, err := fmt.Scan(&input)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return
+			}
+			answerChannel <- input
+		}()
+		select {
+		case <-timer.C:
+			fmt.Printf("You scored %v out of %v", correctCount, len(answerSheet))
+			return
+		case ans := <-answerChannel:
+			if ans == answerSheet[index] {
+				correctCount += 1
+			}
 		}
+
 	}
 	correctString := fmt.Sprintf("You scored %v out of %v", correctCount, len(answerSheet))
 	fmt.Println(correctString)
